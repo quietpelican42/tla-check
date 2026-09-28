@@ -196,6 +196,24 @@ hard boundary — confirmed empirically that `require()` succeeds through one
 regardless of what's inside it, since CJS syntax cannot contain top-level
 await in the first place.
 
+A `.js` file with no `"type"` field anywhere above it (no controlling
+`package.json`, or one that doesn't set `"type"`) is not actually ambiguous to
+Node: its own module-syntax detection (on by default since Node 22.7,
+`--no-experimental-detect-module` to disable) tries to parse the file as
+CommonJS, and loads it as an ES module instead if that fails because the
+parser hit `import`/`export`/`import.meta`/top-level `await`. A file whose
+*only* ESM-looking construct is a bare top-level `await` — no `import` or
+`export` anywhere — still gets loaded as an ES module this way, several hops
+into a dependency with no `"type"` field of its own. Getting this wrong (i.e.
+assuming "no `type` field" means CommonJS) is a false negative: exactly the
+case this tool exists to catch. It's reproduced here as two acorn parses —
+`sourceType: 'script'` first (this is what actually fails on `import`/`export`
+statements, and on `await x` for the same reason V8's synchronous, non-async
+CommonJS wrapper does: `await` is just an identifier outside an async
+function, so `await x` parses as two adjacent expressions with no operator
+between them), then `sourceType: 'module'` if that fails. `"type": "commonjs"`
+set explicitly disables this detection entirely, same as in real Node.
+
 Static `import` and `export ... from` declarations count as graph edges.
 Dynamic `import()` does not — confirmed empirically that a module calling
 `import()` on a top-level-await module, without an `await` of its own at the
@@ -220,6 +238,16 @@ only `import.meta.resolve`, `fs.readFileSync`, and parsing.
 - The legacy `main` fallback (no `exports` map) implements the common
   extension/`index.js` search, not every historical edge case of Node's CJS
   file resolution algorithm.
+- The ambiguous-`.js` sniff (see "How it works") reproduces every documented
+  trigger for Node's own module-syntax detection except one: lexically
+  redeclaring `require`, `module`, `exports`, `__dirname` or `__filename` at
+  the top level. That's syntactically valid either way — it only collides
+  with the real CommonJS wrapper's parameters at evaluation time — so it is
+  not detected, and a file whose only ESM "tell" is that specific pattern is
+  misclassified as CommonJS.
+- If a file parses as neither valid CommonJS nor a valid ES module (a genuine
+  syntax error), that entry is reported `unresolved` rather than guessed
+  either way.
 - A dependency that can't be resolved makes that entry `unresolved`, not a
   verdict. This tool does not guess past a missing or unreadable file.
 - It does not execute or evaluate the target package. A `require()` that
@@ -242,12 +270,13 @@ least that version — not independently verified on 20.x or 22.x.
 ```sh
 npm install
 npx tsc --noEmit
-node --test "test/*.test.ts"      # 30 tests over 19 fixtures: 21 cases cross-
+node --test "test/*.test.ts"      # 38 tests over 23 fixtures: 25 cases cross-
                                    # checked against a real `require()` in a
-                                   # child process, plus 9 behavioural
+                                   # child process, plus 13 behavioural
                                    # assertions (chains, dynamic import, CJS
                                    # boundaries, export conditions, patterns,
-                                   # unresolved dependencies)
+                                   # ambiguous no-"type" detection, unresolved
+                                   # dependencies)
 npm run build && npm run test:dist
 ```
 
@@ -255,22 +284,24 @@ npm run build && npm run test:dist
 
 Installed 24 popular npm packages (`chalk`, `execa`, `got`, `ky`, `nanoid`,
 `node-fetch`, `p-limit`, `p-queue`, `globby`, `boxen`, `ora`, `listr2`, and
-more) into a scratch project and ran `tla-check --installed` against it. It
-reported 26 entry points across 23 of the 24 packages as `ok` (several
-packages, like `nanoid` and `listr2`, export more than one subpath); the 24th,
-`del-cli`, has no `main`/`exports` at all — it's a CLI-only tool — and was
-reported `unresolved` rather than `ok`. Cross-checked all 26 `ok` verdicts,
-plus `del-cli`, against a real `require()` in a separate Node process: 26/26
-`ok` verdicts agreed, and the real `require('del-cli')` also failed, with
-`MODULE_NOT_FOUND` — matching `unresolved`, not contradicting it.
+more) plus `temp-dir@3.0.0` — the actual package from the `lru-cache`/`prettier`
+issues above, as a positive control — into a scratch project, and ran
+`tla-check --installed` against it. It reported 26 entry points across 23 of
+the 25 packages as `ok` (several packages, like `nanoid` and `listr2`, export
+more than one subpath); `temp-dir` as `top-level-await`; and `del-cli`, which
+has no `main`/`exports` at all — it's a CLI-only tool — as `unresolved` rather
+than `ok`.
 
-None of those 24 packages currently has a top-level await in its default
-entry's graph — most of the incidents above have since been patched upstream.
-As a real positive control, `npm install temp-dir@3.0.0` (the actual package
-from the `lru-cache`/`prettier` issues above) and running `tla-check` against
-it reproduces the finding — and a real `require('temp-dir')` in the same
-scratch project does throw `ERR_REQUIRE_ASYNC_MODULE`, confirming the 27th
-verdict — with the exact source line from the issue reports:
+Cross-checked every verdict against a real `require()` in a separate Node
+process: 27/27 of the `ok`/`top-level-await` verdicts agreed, and the real
+`require('del-cli')` also failed, with `MODULE_NOT_FOUND` — matching
+`unresolved`, not contradicting it. None of the 24 general-purpose packages
+has a top-level await in its default entry's graph — most of the incidents
+above have since been patched upstream — which is why `temp-dir` was added
+deliberately: a real-world run with zero positives either means there's
+nothing left to find, or that something is being missed, and those look the
+same from the outside. `tla-check` on `temp-dir` reproduces the finding, with
+the exact source line from the issue reports:
 
 ```
 $ npx tla-check node_modules/temp-dir

@@ -55,6 +55,10 @@ describe('ground truth: every fixture entry matches a real require()', () => {
     { fixture: 'mjs-extension-override' },
     { fixture: 'cjs-extension-override' },
     { fixture: 'node-builtin-import' },
+    { fixture: 'ambiguous-tla-no-type' },
+    { fixture: 'ambiguous-dual-conditions' },
+    { fixture: 'explicit-commonjs-type' },
+    { fixture: 'ambiguous-plain-cjs' },
     { fixture: 'self-reference-import' },
   ];
 
@@ -104,6 +108,36 @@ describe('specific behaviour', () => {
     const e = entry(report);
     assert.equal(e.status, 'ok');
     assert.equal(e.condition, 'require');
+  });
+
+  test('a .js file with no "type" field anywhere above it is sniffed for real ESM syntax, not assumed CommonJS', async () => {
+    // Regression: Node's own module-syntax detection (default on since 22.7)
+    // loads such a file as ESM if it contains ESM-only syntax, even with no
+    // "type" field at all. The tool used to classify these as CommonJS from
+    // the missing field alone and silently stop descent — a false negative.
+    const report = await checkPackage(path.join(FIXTURES, 'ambiguous-tla-no-type'));
+    const e = entry(report);
+    assert.equal(e.status, 'top-level-await');
+    assert.equal(e.requirable, false);
+  });
+
+  test('the same ambiguous-detection sniff applies several hops into a dependency with no "type" field', async () => {
+    const report = await checkPackage(path.join(FIXTURES, 'ambiguous-dual-conditions'));
+    const e = entry(report);
+    assert.equal(e.status, 'top-level-await');
+    const chain = e.awaits[0]!.chain;
+    assert.equal(chain.length, 3, `expected index.js -> dep/esm.js -> dep/deep.js, got ${chain.map((c) => c.url).join(' -> ')}`);
+    assert.ok(chain[2]!.url.endsWith('dep/deep.js'));
+  });
+
+  test('explicit "type": "commonjs" disables ambiguous-file detection entirely', async () => {
+    const report = await checkPackage(path.join(FIXTURES, 'explicit-commonjs-type'));
+    assert.equal(entry(report).status, 'ok');
+  });
+
+  test('an ambiguous .js file with genuinely plain CommonJS content is not a false positive', async () => {
+    const report = await checkPackage(path.join(FIXTURES, 'ambiguous-plain-cjs'));
+    assert.equal(entry(report).status, 'ok');
   });
 
   test('expands a subpath export pattern into one entry per matching file', async () => {

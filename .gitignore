@@ -1,7 +1,9 @@
 /node_modules
 dist
 
-# The deep-chain fixture needs a real node_modules tree to exercise Node's
-# own dependency resolution; it is fixture data, not an installed dependency.
+# These fixtures need a real node_modules tree to exercise Node's own
+# dependency resolution; it is fixture data, not an installed dependency.
 !test/fixtures/deep-chain/node_modules
 !test/fixtures/deep-chain/node_modules/**
+!test/fixtures/ambiguous-dual-conditions/node_modules
+!test/fixtures/ambiguous-dual-conditions/node_modules/**
