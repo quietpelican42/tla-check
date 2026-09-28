@@ -1,0 +1,8 @@
+{
+  "name": "pattern-exports",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    "./features/*": "./src/features/*.js"
+  }
+}

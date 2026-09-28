@@ -1,0 +1,52 @@
+{
+  "name": "tla-check",
+  "version": "0.1.0",
+  "description": "Finds top-level await reachable from require()'d ESM entry points, before Node throws ERR_REQUIRE_ASYNC_MODULE at you.",
+  "keywords": [
+    "require",
+    "esm",
+    "top-level-await",
+    "ERR_REQUIRE_ASYNC_MODULE",
+    "commonjs",
+    "publint",
+    "node"
+  ],
+  "license": "MIT",
+  "author": "__AUTHOR__",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/__GH_OWNER__/tla-check.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "tla-check": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build && npm run test:dist",
+    "test:dist": "node --test test/smoke.mjs"
+  },
+  "dependencies": {
+    "acorn": "^8.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  }
+}

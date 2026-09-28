@@ -1,0 +1,11 @@
+{
+  "name": "dual-conditions-require-clean",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./import-branch.js",
+      "require": "./require-branch.js"
+    }
+  }
+}
